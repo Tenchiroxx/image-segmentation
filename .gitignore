@@ -1,0 +1,8 @@
+datasets/
+datasets/three_band/
+datasets/BSDS300
+x_tmp_10.npy
+x_trn_10.npy
+y_tmp_10.npy
+y_trn_10.npy
+.vscode/
