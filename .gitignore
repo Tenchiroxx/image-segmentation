@@ -6,3 +6,7 @@ x_trn_10.npy
 y_tmp_10.npy
 y_trn_10.npy
 .vscode/
+data/
+data-landsat/
+data_rit18/
+tmp/

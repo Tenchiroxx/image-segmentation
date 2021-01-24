@@ -1,9 +1,20 @@
-"""U-Net model implementation with keras"""
+import tensorflow as tf
 
-import keras
-from keras import backend as K
-from keras.models import Model
-from keras.layers import Input, concatenate, Conv2D, MaxPooling2D, UpSampling2D, GaussianNoise, Dropout
+# -- Throtling GPU use -- 
+gpus = tf.config.experimental.list_physical_devices("GPU")
+if gpus:
+  try:
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+  except RuntimeError as e:
+    print(e)
+
+
+import tensorflow.keras as keras
+from tensorflow.keras import backend as K
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, concatenate, Conv2D, MaxPooling2D, UpSampling2D, GaussianNoise, Dropout, BatchNormalization, Activation, Conv2DTranspose
+
 
 def u_net(shape, nb_filters_0=32, exp=1, conv_size=3, initialization='glorot_uniform', activation="relu", sigma_noise=0, output_channels=1, drop=0.0):
     """U-Net model.
@@ -42,6 +53,7 @@ def u_net(shape, nb_filters_0=32, exp=1, conv_size=3, initialization='glorot_uni
         channel_axis = 3
 
     inputs = Input(shape)
+    print(inputs)
     conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
                    padding='same', kernel_initializer=initialization, name="conv1_1")(inputs)
     conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
@@ -201,3 +213,54 @@ def u_net3(shape, nb_filters_0=32, exp=1, conv_size=3, initialization='glorot_un
     conv10 = Conv2D(output_channels, 1, activation='sigmoid', name="conv_out")(conv7)
 
     return Model(inputs, conv10)
+
+
+
+
+# -- Another Unet implementation
+
+def conv_block(tensor, nfilters, size=3, padding='same', initializer="he_normal"):
+    x = Conv2D(filters=nfilters, kernel_size=(size, size), padding=padding, kernel_initializer=initializer)(tensor)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    x = Conv2D(filters=nfilters, kernel_size=(size, size), padding=padding, kernel_initializer=initializer)(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    return x
+
+
+def deconv_block(tensor, residual, nfilters, size=3, padding='same', strides=(2, 2)):
+    y = Conv2DTranspose(nfilters, kernel_size=(size, size), strides=strides, padding=padding)(tensor)
+    y = concatenate([y, residual], axis=3)
+    y = conv_block(y, nfilters)
+    return y
+
+
+def unet4(img_height, img_width, img_depth, nclasses=3, filters=64):
+# down
+    input_layer = Input(shape=(img_height, img_width, img_depth), name='image_input')
+    conv1 = conv_block(input_layer, nfilters=filters)
+    conv1_out = MaxPooling2D(pool_size=(2, 2))(conv1)
+    conv2 = conv_block(conv1_out, nfilters=filters*2)
+    conv2_out = MaxPooling2D(pool_size=(2, 2))(conv2)
+    conv3 = conv_block(conv2_out, nfilters=filters*4)
+    conv3_out = MaxPooling2D(pool_size=(2, 2))(conv3)
+    conv4 = conv_block(conv3_out, nfilters=filters*8)
+    conv4_out = MaxPooling2D(pool_size=(2, 2))(conv4)
+    conv4_out = Dropout(0.5)(conv4_out)
+    conv5 = conv_block(conv4_out, nfilters=filters*16)
+    conv5 = Dropout(0.5)(conv5)
+# up
+    deconv6 = deconv_block(conv5, residual=conv4, nfilters=filters*8)
+    deconv6 = Dropout(0.5)(deconv6)
+    deconv7 = deconv_block(deconv6, residual=conv3, nfilters=filters*4)
+    deconv7 = Dropout(0.5)(deconv7) 
+    deconv8 = deconv_block(deconv7, residual=conv2, nfilters=filters*2)
+    deconv9 = deconv_block(deconv8, residual=conv1, nfilters=filters)
+# output
+    output_layer = Conv2D(filters=nclasses, kernel_size=(1, 1))(deconv9)
+    output_layer = BatchNormalization()(output_layer)
+    output_layer = Activation('softmax')(output_layer)
+
+    model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
+    return model

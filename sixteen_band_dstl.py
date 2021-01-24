@@ -11,17 +11,19 @@ from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras import backend as K
-from sklearn.metrics import jaccard_similarity_score
+from sklearn.metrics import jaccard_score
 from shapely.geometry import MultiPolygon, Polygon
 import shapely.wkt
 import shapely.affinity
 from collections import defaultdict
+from unet import u_net
+
+
 
 N_Cls = 10
-inDir = '/home/n01z3/dataset/dstl'
+inDir = '../datasets'
 DF = pd.read_csv(inDir + '/train_wkt_v4.csv')
 GS = pd.read_csv(inDir + '/grid_sizes.csv', names=['ImageId', 'Xmax', 'Ymin'], skiprows=1)
-SB = pd.read_csv(os.path.join(inDir, 'sample_submission.csv'))
 ISZ = 160
 smooth = 1e-12
 
@@ -154,28 +156,28 @@ def stick_all_train():
     y = np.zeros((5 * s, 5 * s, N_Cls))
 
     ids = sorted(DF.ImageId.unique())
-    print len(ids)
+    print(len(ids))
     for i in range(5):
         for j in range(5):
             id = ids[5 * i + j]
 
             img = M(id)
             img = stretch_n(img)
-            print img.shape, id, np.amax(img), np.amin(img)
+            print(img.shape, id, np.amax(img), np.amin(img))
             x[s * i:s * i + s, s * j:s * j + s, :] = img[:s, :s, :]
             for z in range(N_Cls):
                 y[s * i:s * i + s, s * j:s * j + s, z] = generate_mask_for_image_and_class(
                     (img.shape[0], img.shape[1]), id, z + 1)[:s, :s]
 
-    print np.amax(y), np.amin(y)
+    print(np.amax(y), np.amin(y))
 
     np.save('data/x_trn_%d' % N_Cls, x)
     np.save('data/y_trn_%d' % N_Cls, y)
 
 
 def get_patches(img, msk, amt=10000, aug=True):
-    is2 = int(1.0 * ISZ)
-    xm, ym = img.shape[0] - is2, img.shape[1] - is2
+    is2 = int(1.0 * ISZ)  # = 160.0
+    xm, ym = img.shape[0] - is2, img.shape[1] - is2 #4175 - 160, 4175 - 160
 
     x, y = [], []
 
@@ -187,10 +189,11 @@ def get_patches(img, msk, amt=10000, aug=True):
         im = img[xc:xc + is2, yc:yc + is2]
         ms = msk[xc:xc + is2, yc:yc + is2]
 
-        for j in range(N_Cls):
-            sm = np.sum(ms[:, :, j])
-            if 1.0 * sm / is2 ** 2 > tr[j]:
-                if aug:
+# We add only the valuable patches (which are not too dark)
+        for j in range(N_Cls):   #Iterate on the number of classes
+            sm = np.sum(ms[:, :, j])  #sum the values of all pixels on the patch for a given class
+            if 1.0 * sm / is2 ** 2 > tr[j]: # if the average is superior to a threshold 
+                if aug:   #Data augmentation
                     if random.uniform(0, 1) > 0.5:
                         im = im[::-1]
                         ms = ms[::-1]
@@ -198,16 +201,17 @@ def get_patches(img, msk, amt=10000, aug=True):
                         im = im[:, ::-1]
                         ms = ms[:, ::-1]
 
-                x.append(im)
+                x.append(im) 
                 y.append(ms)
-
-    x, y = 2 * np.transpose(x, (0, 3, 1, 2)) - 1, np.transpose(y, (0, 3, 1, 2))
-    print x.shape, y.shape, np.amax(x), np.amin(x), np.amax(y), np.amin(y)
+    
+    x,y = np.array(x), np.array(y)
+    #x, y = 2 * np.transpose(x, (0, 3, 1, 2)) - 1, np.transpose(y, (0, 3, 1, 2))
+    print("Shape of patches :", x.shape, y.shape, np.amax(x), np.amin(x), np.amax(y), np.amin(y))
     return x, y
 
 
 def make_val():
-    print "let's pick some samples for validation"
+    print("let's pick some samples for validation")
     img = np.load('data/x_trn_%d.npy' % N_Cls)
     msk = np.load('data/y_trn_%d.npy' % N_Cls)
     x, y = get_patches(img, msk, amt=3000)
@@ -218,40 +222,40 @@ def make_val():
 
 def get_unet():
     inputs = Input((8, ISZ, ISZ))
-    conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
-    conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(conv1)
+    conv1 = Convolution2D(32, 3, 3, activation='relu', padding='same')(inputs)
+    conv1 = Convolution2D(32, 3, 3, activation='relu', padding='same')(conv1)
     pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
 
-    conv2 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(pool1)
-    conv2 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(conv2)
+    conv2 = Convolution2D(64, 3, 3, activation='relu', padding='same')(pool1)
+    conv2 = Convolution2D(64, 3, 3, activation='relu', padding='same')(conv2)
     pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
 
-    conv3 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(pool2)
-    conv3 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(conv3)
+    conv3 = Convolution2D(128, 3, 3, activation='relu', padding='same')(pool2)
+    conv3 = Convolution2D(128, 3, 3, activation='relu', padding='same')(conv3)
     pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
 
-    conv4 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(pool3)
-    conv4 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(conv4)
+    conv4 = Convolution2D(256, 3, 3, activation='relu', padding='same')(pool3)
+    conv4 = Convolution2D(256, 3, 3, activation='relu', padding='same')(conv4)
     pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
 
-    conv5 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(pool4)
-    conv5 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(conv5)
+    conv5 = Convolution2D(512, 3, 3, activation='relu', padding='same')(pool4)
+    conv5 = Convolution2D(512, 3, 3, activation='relu', padding='same')(conv5)
 
     up6 = merge([UpSampling2D(size=(2, 2))(conv5), conv4], mode='concat', concat_axis=1)
-    conv6 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(up6)
-    conv6 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(conv6)
+    conv6 = Convolution2D(256, 3, 3, activation='relu', padding='same')(up6)
+    conv6 = Convolution2D(256, 3, 3, activation='relu', padding='same')(conv6)
 
     up7 = merge([UpSampling2D(size=(2, 2))(conv6), conv3], mode='concat', concat_axis=1)
-    conv7 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(up7)
-    conv7 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(conv7)
+    conv7 = Convolution2D(128, 3, 3, activation='relu', padding='same')(up7)
+    conv7 = Convolution2D(128, 3, 3, activation='relu', padding='same')(conv7)
 
     up8 = merge([UpSampling2D(size=(2, 2))(conv7), conv2], mode='concat', concat_axis=1)
-    conv8 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(up8)
-    conv8 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(conv8)
+    conv8 = Convolution2D(64, 3, 3, activation='relu', padding='same')(up8)
+    conv8 = Convolution2D(64, 3, 3, activation='relu', padding='same')(conv8)
 
     up9 = merge([UpSampling2D(size=(2, 2))(conv8), conv1], mode='concat', concat_axis=1)
-    conv9 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(up9)
-    conv9 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(conv9)
+    conv9 = Convolution2D(32, 3, 3, activation='relu', padding='same')(up9)
+    conv9 = Convolution2D(32, 3, 3, activation='relu', padding='same')(conv9)
 
     conv10 = Convolution2D(N_Cls, 1, 1, activation='sigmoid')(conv9)
 
@@ -265,7 +269,7 @@ def calc_jacc(model):
     msk = np.load('data/y_tmp_%d.npy' % N_Cls)
 
     prd = model.predict(img, batch_size=4)
-    print prd.shape, msk.shape
+    print(prd.shape, msk.shape)
     avg, trs = [], []
 
     for i in range(N_Cls):
@@ -279,11 +283,11 @@ def calc_jacc(model):
             tr = j / 10.0
             pred_binary_mask = t_prd > tr
 
-            jk = jaccard_similarity_score(t_msk, pred_binary_mask)
+            jk = jaccard_score(t_msk, pred_binary_mask)
             if jk > m:
                 m = jk
                 b_tr = tr
-        print i, m, b_tr
+        print(i, m, b_tr)
         avg.append(m)
         trs.append(b_tr)
 
@@ -358,26 +362,39 @@ def get_scalers(im_size, x_max, y_min):
     h_ = 1.0 * h * (h / (h + 1))
     return w_ / x_max, h_ / y_min
 
+def jaccard2_coef(y_true, y_pred, smooth=1.0):
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    union = K.sum(y_true_f * y_true_f) + K.sum(y_pred_f * y_pred_f) - intersection
+    return (intersection + smooth) / (union + smooth)
+def jaccard2_loss(y_true, y_pred, smooth=1.0):
+    return 1 - jaccard2_coef(y_true, y_pred, smooth)
 
 def train_net():
-    print "start train net"
+    print("start train net")
     x_val, y_val = np.load('data/x_tmp_%d.npy' % N_Cls), np.load('data/y_tmp_%d.npy' % N_Cls)
     img = np.load('data/x_trn_%d.npy' % N_Cls)
     msk = np.load('data/y_trn_%d.npy' % N_Cls)
 
-    x_trn, y_trn = get_patches(img, msk)
 
-    model = get_unet()
-    model.load_weights('weights/unet_10_jk0.7878')
+    print(img.shape, msk.shape, "hey")
+
+    x_trn, y_trn = get_patches(img, msk)
+    
+
+    model = u_net((ISZ, ISZ, 8), output_channels = 10)
+    model.compile(loss=jaccard2_loss, optimizer=Adam())
+    #model.load_weights('weights/unet_10_jk0.7878')
     model_checkpoint = ModelCheckpoint('weights/unet_tmp.hdf5', monitor='loss', save_best_only=True)
     for i in range(1):
-        model.fit(x_trn, y_trn, batch_size=64, nb_epoch=1, verbose=1, shuffle=True,
+        model.fit(x_trn, y_trn, batch_size=64, epochs=10, verbose=1, shuffle=True,
                   callbacks=[model_checkpoint], validation_data=(x_val, y_val))
         del x_trn
         del y_trn
         x_trn, y_trn = get_patches(img, msk)
         score, trs = calc_jacc(model)
-        print 'val jk', score
+        print('val jk', score)
         model.save_weights('weights/unet_10_jk%.4f' % score)
 
     return model
@@ -409,17 +426,17 @@ def predict_id(id, model, trs):
 
 
 def predict_test(model, trs):
-    print "predict test"
+    print("predict test")
     for i, id in enumerate(sorted(set(SB['ImageId'].tolist()))):
         msk = predict_id(id, model, trs)
         np.save('msk/10_%s' % id, msk)
-        if i % 100 == 0: print i, id
+        if i % 100 == 0: print(i, id)
 
 
 def make_submit():
-    print "make submission file"
+    print("make submission file")
     df = pd.read_csv(os.path.join(inDir, 'sample_submission.csv'))
-    print df.head()
+    print(df.head())
     for idx, row in df.iterrows():
         id = row[0]
         kls = row[1] - 1
@@ -435,8 +452,8 @@ def make_submit():
                                                       origin=(0, 0, 0))
 
         df.iloc[idx, 2] = shapely.wkt.dumps(scaled_pred_polygons)
-        if idx % 100 == 0: print idx
-    print df.head()
+        if idx % 100 == 0: print(idx)
+    print(df.head())
     df.to_csv('subm/1.csv', index=False)
 
 
@@ -465,6 +482,7 @@ if __name__ == '__main__':
     stick_all_train()
     make_val()
     model = train_net()
+    model
     score, trs = calc_jacc(model)
     predict_test(model, trs)
     make_submit()
