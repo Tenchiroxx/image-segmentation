@@ -1,7 +1,7 @@
 import os
 import tifffile as tif
 import numpy as np
-from unet import unet4, u_net
+from unet import unet4, u_net, Unet
 import tensorflow as tf
 from tensorflow.keras.optimizers import SGD, RMSprop, Adagrad, Adadelta, Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -132,12 +132,12 @@ model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
 
 
 # Deep Learning Model 2
-model = u_net((img_rows, img_cols, img_channels), output_channels=7, initialization="he_normal")
+model = Unet((img_rows, img_cols, img_channels), output_channels=7, initialization="he_normal", kernel_size=3)
 model.compile(loss = "categorical_crossentropy", optimizer=Adam())
 model.fit(generator, batch_size=32, 
             steps_per_epoch=30, 
-            epochs=5,
+            epochs=100,
             validation_data = (val_data, val_labels),
-
             callbacks=[model_checkpoint_callback])
+
 

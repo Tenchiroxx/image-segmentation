@@ -13,299 +13,48 @@ if gpus:
 import tensorflow.keras as keras
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, concatenate, Conv2D, MaxPooling2D, UpSampling2D, GaussianNoise, Dropout, BatchNormalization, Activation, Conv2DTranspose
+from tensorflow.keras.layers import Input, concatenate, Conv1D, Conv2D, Conv3D, MaxPooling1D, MaxPooling2D, UpSampling2D, GaussianNoise, Dropout, BatchNormalization, Activation, Conv2DTranspose, Dense, Flatten, Reshape
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.optimizers import Adam
 
-
-def u_net(shape, nb_filters_0=32, exp=1, conv_size=3, initialization='glorot_uniform', activation="relu", sigma_noise=0, output_channels=1, drop=0.0):
-    """U-Net model.
-
-    Standard U-Net model, plus optional gaussian noise.
-    Note that the dimensions of the input images should be
-    multiples of 16.
-
-    Arguments:
-    shape: image shape, in the format (nb_channels, x_size, y_size).
-    nb_filters_0 : initial number of filters in the convolutional layer.
-    exp : should be equal to 0 or 1. Indicates if the number of layers should be constant (0) or increase exponentially (1).
-    conv_size : size of convolution.
-    initialization: initialization of the convolutional layers.
-    activation: activation of the convolutional layers.
-    sigma_noise: standard deviation of the gaussian noise layer. If equal to zero, this layer is deactivated.
-    output_channels: number of output channels.
-    drop: dropout rate
-
-    Returns:
-    U-Net model - it still needs to be compiled.
-
-    Reference:
-    U-Net: Convolutional Networks for Biomedical Image Segmentation
-    Olaf Ronneberger, Philipp Fischer, Thomas Brox
-    MICCAI 2015
-
-    Credits:
-    The starting point for the code of this function comes from:
-    https://github.com/jocicmarko/ultrasound-nerve-segmentation
-    by Marko Jocic
-    """
-    if K.image_data_format() == 'channels_first':
-        channel_axis = 1
-    else:
-        channel_axis = 3
-
-    inputs = Input(shape)
-    print(inputs)
-    conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv1_1")(inputs)
-    conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv1_2")(conv1)
-    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-    if drop > 0.0: pool1 = Dropout(drop)(pool1)
-
-    conv2 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv2_1")(pool1)
-    conv2 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv2_2")(conv2)
-    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-    if drop > 0.0: pool2 = Dropout(drop)(pool2)
-
-    conv3 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv3_1")(pool2)
-    conv3 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv3_2")(conv3)
-    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-    if drop > 0.0: pool3 = Dropout(drop)(pool3)
-
-    conv4 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv4_1")(pool3)
-    conv4 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv4_2")(conv4)
-    pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
-    if drop > 0.0: pool4 = Dropout(drop)(pool4)
-
-    conv5 = Conv2D(nb_filters_0 * 2**(4 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv5_1")(pool4)
-    conv5 = Conv2D(nb_filters_0 * 2**(4 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv5_2")(conv5)
-    if drop > 0.0: conv5 = Dropout(drop)(conv5)
-
-    up6 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv5), conv4], axis=channel_axis)
-    conv6 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv6_1")(up6)
-    conv6 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv6_2")(conv6)
-    if drop > 0.0: conv6 = Dropout(drop)(conv6)
-
-    up7 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv6), conv3], axis=channel_axis)
-    conv7 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv7_1")(up7)
-    conv7 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv7_2")(conv7)
-    if drop > 0.0: conv7 = Dropout(drop)(conv7)
-
-    up8 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv7), conv2], axis=channel_axis)
-    conv8 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv8_1")(up8)
-    conv8 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv8_2")(conv8)
-    if drop > 0.0: conv8 = Dropout(drop)(conv8)
-
-    up9 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv8), conv1], axis=channel_axis)
-    conv9 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv9_1")(up9)
-    conv9 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv9_2")(conv9)
-    if drop > 0.0: conv9 = Dropout(drop)(conv9)
-
-    if sigma_noise > 0:
-        conv9 = GaussianNoise(sigma_noise)(conv9)
-
-    conv10 = Conv2D(output_channels, 1, activation='sigmoid', name="conv_out")(conv9)
-
-    return Model(inputs, conv10)
-
-
-def u_net3(shape, nb_filters_0=32, exp=1, conv_size=3, initialization='glorot_uniform', activation="relu", sigma_noise=0, output_channels=1):
-    """U-Net model, with three layers.
-
-    U-Net model using 3 maxpoolings/upsamplings, plus optional gaussian noise.
-
-    Arguments:
-    shape: image shape, in the format (nb_channels, x_size, y_size).
-    nb_filters_0 : initial number of filters in the convolutional layer.
-    exp : should be equal to 0 or 1. Indicates if the number of layers should be constant (0) or increase exponentially (1).
-    conv_size : size of convolution.
-    initialization: initialization of the convolutional layers.
-    activation: activation of the convolutional layers.
-    sigma_noise: standard deviation of the gaussian noise layer. If equal to zero, this layer is deactivated.
-    output_channels: number of output channels.
-
-    Returns:
-    U-Net model - it still needs to be compiled.
-
-    Reference:
-    U-Net: Convolutional Networks for Biomedical Image Segmentation
-    Olaf Ronneberger, Philipp Fischer, Thomas Brox
-    MICCAI 2015
-
-    Credits:
-    The starting point for the code of this function comes from:
-    https://github.com/jocicmarko/ultrasound-nerve-segmentation
-    by Marko Jocic
-    """
-
-    if K.image_data_format() == 'channels_first':
-        channel_axis = 1
-    else:
-        channel_axis = 3
-
-    inputs = Input(shape)
-    conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv1_1")(inputs)
-    conv1 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv1_2")(conv1)
-    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-
-    conv2 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv2_1")(pool1)
-    conv2 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv2_2")(conv2)
-    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-
-    conv3 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv3_1")(pool2)
-    conv3 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv3_2")(conv3)
-    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-
-    conv4 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv4_1")(pool3)
-    conv4 = Conv2D(nb_filters_0 * 2**(3 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv4_2")(conv4)
-
-    up5 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv4), conv3], axis=channel_axis)
-    conv5 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv5_1")(up5)
-    conv5 = Conv2D(nb_filters_0 * 2**(2 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv5_2")(conv5)
-
-    up6 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv5), conv2], axis=channel_axis)
-    conv6 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv6_1")(up6)
-    conv6 = Conv2D(nb_filters_0 * 2**(1 * exp), conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv6_2")(conv6)
-
-    up7 = concatenate(
-        [UpSampling2D(size=(2, 2))(conv6), conv1], axis=channel_axis)
-    conv7 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv7_1")(up7)
-    conv7 = Conv2D(nb_filters_0, conv_size, activation=activation,
-                   padding='same', kernel_initializer=initialization, name="conv7_2")(conv7)
-
-    if sigma_noise > 0:
-        conv7 = GaussianNoise(sigma_noise)(conv7)
-
-    conv10 = Conv2D(output_channels, 1, activation='sigmoid', name="conv_out")(conv7)
-
-    return Model(inputs, conv10)
-
-
-
-
-# -- Another Unet implementation
-
-def conv_block(tensor, nfilters, size=3, padding='same', initializer="he_normal"):
-    x = Conv2D(filters=nfilters, kernel_size=(size, size), padding=padding, kernel_initializer=initializer)(tensor)
-    x = BatchNormalization()(x)
-    x = Activation("relu")(x)
-    x = Conv2D(filters=nfilters, kernel_size=(size, size), padding=padding, kernel_initializer=initializer)(x)
-    x = BatchNormalization()(x)
-    x = Activation("relu")(x)
-    return x
-
-
-def deconv_block(tensor, residual, nfilters, size=3, padding='same', strides=(2, 2)):
-    y = Conv2DTranspose(nfilters, kernel_size=(size, size), strides=strides, padding=padding)(tensor)
-    y = concatenate([y, residual], axis=3)
-    y = conv_block(y, nfilters)
-    return y
-
-
-def unet4(img_height, img_width, img_depth, nclasses=3, filters=64):
-# down
-    input_layer = Input(shape=(img_height, img_width, img_depth), name='image_input')
-    conv1 = conv_block(input_layer, nfilters=filters)
-    conv1_out = MaxPooling2D(pool_size=(2, 2))(conv1)
-    conv2 = conv_block(conv1_out, nfilters=filters*2)
-    conv2_out = MaxPooling2D(pool_size=(2, 2))(conv2)
-    conv3 = conv_block(conv2_out, nfilters=filters*4)
-    conv3_out = MaxPooling2D(pool_size=(2, 2))(conv3)
-    conv4 = conv_block(conv3_out, nfilters=filters*8)
-    conv4_out = MaxPooling2D(pool_size=(2, 2))(conv4)
-    conv4_out = Dropout(0.5)(conv4_out)
-    conv5 = conv_block(conv4_out, nfilters=filters*16)
-    conv5 = Dropout(0.5)(conv5)
-# up
-    deconv6 = deconv_block(conv5, residual=conv4, nfilters=filters*8)
-    deconv6 = Dropout(0.5)(deconv6)
-    deconv7 = deconv_block(deconv6, residual=conv3, nfilters=filters*4)
-    deconv7 = Dropout(0.5)(deconv7) 
-    deconv8 = deconv_block(deconv7, residual=conv2, nfilters=filters*2)
-    deconv9 = deconv_block(deconv8, residual=conv1, nfilters=filters)
-# output
-    output_layer = Conv2D(filters=nclasses, kernel_size=(1, 1))(deconv9)
-    output_layer = BatchNormalization()(output_layer)
-    output_layer = Activation('softmax')(output_layer)
-
-    model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
-    return model
-
-
-
-
-def ConvBlock(tensor, nb_filters, kernel_size=3, padding='same', initializer='he_normal', activation="relu"):
-    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initialization)(tensor)
+def ConvBlock(tensor, nb_filters, kernel_size=3, padding='same', initializer='he_normal', activation="relu", regularization=None):
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initializer, kernel_regularizer=regularization)(tensor)
     x = BatchNormalization()(x)
     x = Activation(activation)(x)
-    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initialization)(x)
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initializer, kernel_regularizer=regularization)(x)
     x = BatchNormalization()(x)
     x = Activation(activation)(x)
     return x
 
-def DeconvBlock(tensor, residual, nb_filters, kernel_size=3, padding="same", strides=(2,2)):
+def DeconvBlock(tensor, residual, nb_filters, kernel_size=3, padding="same", strides=(2,2), regularization=None):
     y = Conv2DTranspose(nb_filters, kernel_size=(kernel_size, kernel_size), strides=strides, padding=padding)(tensor)
     y = concatenate([y, residual], axis=3)
-    y = conv_block(y, nfilters)
+    y = ConvBlock(y, nb_filters, kernel_size, regularization=regularization)
     return y
 
-def Unet(shape, nb_filters_0=32, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, dropout=0.0):
+def Unet(shape, nb_filters=32, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, drop=0.0):
     
     input_layer = Input(shape=shape)
 
     conv1 = ConvBlock(input_layer, nb_filters=nb_filters, kernel_size=kernel_size, initializer=initialization, activation=activation )
     pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-    if drop > 0.0: pool1 = Dropout(dropout)(pool1)
+    if drop > 0.0: pool1 = Dropout(drop)(pool1)
 
     conv2 = ConvBlock(pool1, nb_filters=nb_filters * 2 **(1 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
     pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-    if drop > 0.0: pool2 = Dropout(dropout)(pool2)
+    if drop > 0.0: pool2 = Dropout(drop)(pool2)
 
     conv3 = ConvBlock(pool2, nb_filters=nb_filters * 2 **(2 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
     pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-    if drop > 0.0: pool3 = Dropout(dropout)(pool3)
+    if drop > 0.0: pool3 = Dropout(drop)(pool3)
 
     conv4 = ConvBlock(pool3, nb_filters=nb_filters * 2 **(3 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
     pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
-    if drop > 0.0: pool4 = Dropout(dropout)(pool4)
+    if drop > 0.0: pool4 = Dropout(drop)(pool4)
 
     conv5 = ConvBlock(pool4, nb_filters=nb_filters * 2 **(4 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
     pool5 = MaxPooling2D(pool_size=(2, 2))(conv5)
-    if drop > 0.0: pool5 = Dropout(dropout)(pool5)
+    if drop > 0.0: pool5 = Dropout(drop)(pool5)
 
     deconv6 = DeconvBlock(conv5, residual=conv4, nb_filters=nb_filters * 2 **(3 * exp), kernel_size=kernel_size)
     if drop > 0.0: deconv6 = Dropout(drop)(deconv6)
@@ -322,10 +71,148 @@ def Unet(shape, nb_filters_0=32, exp=1, kernel_size=3, initialization="glorot_un
     if sigma_noise > 0:
         deconv9 = GaussianNoise(sigma_noise)(deconv9)
 
-    output_layer = Conv2D(filters=nb_classes, kernel_size=(1, 1))(deconv9)
+    output_layer = Conv2D(filters=output_channels, kernel_size=(1, 1))(deconv9)
     output_layer = BatchNormalization()(output_layer)
     output_layer = Activation('softmax')(output_layer)
 
 
     model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
     return model
+
+
+def Unet4(shape, nb_filters=32, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, drop=0.0, regularization=None):
+    input_layer = Input(shape=shape)
+
+    conv1 = ConvBlock(input_layer, nb_filters=nb_filters, kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+    if drop > 0.0: pool1 = Dropout(drop)(pool1)
+
+    conv2 = ConvBlock(pool1, nb_filters=nb_filters * 2 **(1 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+    if drop > 0.0: pool2 = Dropout(drop)(pool2)
+
+    conv3 = ConvBlock(pool2, nb_filters=nb_filters * 2 **(2 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+    if drop > 0.0: pool3 = Dropout(drop)(pool3)
+
+    conv4 = ConvBlock(pool3, nb_filters=nb_filters * 2 **(3 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
+    if drop > 0.0: pool4 = Dropout(drop)(pool4)
+
+    
+
+    deconv5 = DeconvBlock(conv4, residual=conv3, nb_filters=nb_filters * 2 **(2 * exp), kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv5 = Dropout(drop)(deconv5)
+
+    deconv6 = DeconvBlock(deconv5, residual=conv2, nb_filters=nb_filters * 2 **(1 * exp), kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv6 = Dropout(drop)(deconv6)
+
+    deconv7 = DeconvBlock(deconv6, residual=conv1, nb_filters=nb_filters, kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv7 = Dropout(drop)(deconv7)
+
+
+
+    if sigma_noise > 0:
+        deconv7 = GaussianNoise(sigma_noise)(deconv7)
+
+    output_layer = Conv2D(filters=output_channels, kernel_size=(1, 1))(deconv7)
+    output_layer = BatchNormalization()(output_layer)
+    output_layer = Activation('softmax')(output_layer)
+
+
+    model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
+    return model
+
+
+def ConvBlockSeparable(tensor, nb_filters, depth, kernel_size=3, padding='same', initializer='he_normal', activation="relu", regularization=None):
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initializer, groups=depth, kernel_regularizer=regularization)(tensor)
+    x = BatchNormalization()(x)
+    x = Activation(activation)(x)
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initializer, groups=depth, kernel_regularizer=regularization)(x)
+    x = BatchNormalization()(x)
+    x = Activation(activation)(x)
+    return x
+
+def UnetSeparable(shape, depth, nb_filters=2, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, drop=0.0, regularization=None):
+    
+    input_layer = Input(shape=shape)
+
+    conv1 = ConvBlockSeparable(input_layer, depth=depth, nb_filters=depth*nb_filters, kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+    if drop > 0.0: pool1 = Dropout(drop)(pool1)
+
+    conv2 = ConvBlockSeparable(pool1, depth=depth, nb_filters=depth*nb_filters * 2 **(1 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+    if drop > 0.0: pool2 = Dropout(drop)(pool2)
+
+    conv3 = ConvBlockSeparable(pool2, depth=depth, nb_filters=depth*nb_filters * 2 **(2 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+    if drop > 0.0: pool3 = Dropout(drop)(pool3)
+
+    conv4 = ConvBlockSeparable(pool3, depth=depth, nb_filters=depth*nb_filters * 2 **(3 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation, regularization=regularization)
+    pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
+    if drop > 0.0: pool4 = Dropout(drop)(pool4)
+
+
+    deconv6 = DeconvBlock(pool4, residual=pool3, nb_filters=depth*nb_filters * 2 **(3 * exp), kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv6 = Dropout(drop)(deconv6)
+
+    deconv7 = DeconvBlock(deconv6, residual=conv3, nb_filters=depth*nb_filters * 2 **(2 * exp), kernel_size=kernel_size,regularization=regularization)
+    if drop > 0.0: deconv7 = Dropout(drop)(deconv7)
+
+    deconv8 = DeconvBlock(deconv7, residual=conv2, nb_filters=depth*nb_filters * 2 **(1 * exp), kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv8 = Dropout(drop)(deconv8)
+
+    deconv9 = DeconvBlock(deconv8, residual=conv1, nb_filters=depth*nb_filters, kernel_size=kernel_size, regularization=regularization)
+    if drop > 0.0: deconv9 = Dropout(drop)(deconv9)
+
+    if sigma_noise > 0:
+        deconv9 = GaussianNoise(sigma_noise)(deconv9)
+
+    output_layer = Conv2D(filters=output_channels, kernel_size=(1, 1))(deconv9)
+    output_layer = BatchNormalization()(output_layer)
+    output_layer = Activation('softmax')(output_layer)
+
+
+    model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
+    return model
+
+def cnn_1D(shape, kernel_size, nb_filters_0, nb_dense_neurons, kernel_reg, dense_reg, output_channels=1, dropout=0.0, learning_rate=1e-3):
+    
+    kernel_initializer = "glorot_uniform"
+    input_layer = Input(shape=shape)
+
+    x = Conv1D(filters=nb_filters_0, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=None, padding='valid')(input_layer)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    #x = MaxPooling1D(pool_size=2)(x)
+    x = Dropout(dropout)(x)
+
+    x = Conv1D(filters=nb_filters_0*2, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=None, padding='valid')(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    #x = MaxPooling1D(pool_size=2)(x)
+    x = Dropout(dropout)(x)
+
+    # x = Conv1D(filters=nb_filters_0*4, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=l2(kernel_reg), padding='same')(x)
+    # x = BatchNormalization()(x)
+    # x = Activation("relu")(x)
+    # # x = MaxPooling1D(pool_size=2)(x)
+    # x = Dropout(dropout)(x)
+
+    x = Flatten()(x)
+    x = Dense(nb_dense_neurons, kernel_regularizer=None)(x)
+
+    x = Dropout(dropout)(x)
+    
+
+    output_layer = Dense(output_channels, activation="softmax")(x)
+
+    model = Model(inputs=input_layer, outputs=output_layer)
+    model.compile(loss = "categorical_crossentropy", optimizer=Adam(learning_rate=learning_rate), metrics=["accuracy"])
+
+    return model
+    
+
+
+    
