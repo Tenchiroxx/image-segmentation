@@ -264,3 +264,68 @@ def unet4(img_height, img_width, img_depth, nclasses=3, filters=64):
 
     model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
     return model
+
+
+
+
+def ConvBlock(tensor, nb_filters, kernel_size=3, padding='same', initializer='he_normal', activation="relu"):
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initialization)(tensor)
+    x = BatchNormalization()(x)
+    x = Activation(activation)(x)
+    x = Conv2D(filters=nb_filters, kernel_size=kernel_size, padding=padding, kernel_initializer=initialization)(x)
+    x = BatchNormalization()(x)
+    x = Activation(activation)(x)
+    return x
+
+def DeconvBlock(tensor, residual, nb_filters, kernel_size=3, padding="same", strides=(2,2)):
+    y = Conv2DTranspose(nb_filters, kernel_size=(kernel_size, kernel_size), strides=strides, padding=padding)(tensor)
+    y = concatenate([y, residual], axis=3)
+    y = conv_block(y, nfilters)
+    return y
+
+def Unet(shape, nb_filters_0=32, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, dropout=0.0):
+    
+    input_layer = Input(shape=shape)
+
+    conv1 = ConvBlock(input_layer, nb_filters=nb_filters, kernel_size=kernel_size, initializer=initialization, activation=activation )
+    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+    if drop > 0.0: pool1 = Dropout(dropout)(pool1)
+
+    conv2 = ConvBlock(pool1, nb_filters=nb_filters * 2 **(1 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
+    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+    if drop > 0.0: pool2 = Dropout(dropout)(pool2)
+
+    conv3 = ConvBlock(pool2, nb_filters=nb_filters * 2 **(2 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
+    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+    if drop > 0.0: pool3 = Dropout(dropout)(pool3)
+
+    conv4 = ConvBlock(pool3, nb_filters=nb_filters * 2 **(3 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
+    pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
+    if drop > 0.0: pool4 = Dropout(dropout)(pool4)
+
+    conv5 = ConvBlock(pool4, nb_filters=nb_filters * 2 **(4 * exp), kernel_size=kernel_size, initializer=initialization, activation=activation )
+    pool5 = MaxPooling2D(pool_size=(2, 2))(conv5)
+    if drop > 0.0: pool5 = Dropout(dropout)(pool5)
+
+    deconv6 = DeconvBlock(conv5, residual=conv4, nb_filters=nb_filters * 2 **(3 * exp), kernel_size=kernel_size)
+    if drop > 0.0: deconv6 = Dropout(drop)(deconv6)
+
+    deconv7 = DeconvBlock(deconv6, residual=conv3, nb_filters=nb_filters * 2 **(2 * exp), kernel_size=kernel_size)
+    if drop > 0.0: deconv7 = Dropout(drop)(deconv7)
+
+    deconv8 = DeconvBlock(deconv7, residual=conv2, nb_filters=nb_filters * 2 **(1 * exp), kernel_size=kernel_size)
+    if drop > 0.0: deconv8 = Dropout(drop)(deconv8)
+
+    deconv9 = DeconvBlock(deconv8, residual=conv1, nb_filters=nb_filters, kernel_size=kernel_size)
+    if drop > 0.0: deconv9 = Dropout(drop)(deconv9)
+
+    if sigma_noise > 0:
+        deconv9 = GaussianNoise(sigma_noise)(deconv9)
+
+    output_layer = Conv2D(filters=nb_classes, kernel_size=(1, 1))(deconv9)
+    output_layer = BatchNormalization()(output_layer)
+    output_layer = Activation('softmax')(output_layer)
+
+
+    model = Model(inputs=input_layer, outputs=output_layer, name='Unet')
+    return model
