@@ -1,8 +1,8 @@
 # Multispectral and Hyperspectral Image segmentation with CNNs
 
-Author : Emmanuel Gardin
-E-mail : emmanuel.gardin@mines-paristech.fr 
-Date : March 2021
+- Author : Emmanuel Gardin
+- E-mail : emmanuel.gardin@mines-paristech.fr 
+- Date : March 2021
 
 
 This project is aimed at the segmentation of multispectral and hyperspectral images using neural networks. It is based on the paper Jeppesen, 2019, which highlights the difficulty of the U-Net architecture in exploiting spectral information for multispectral images in the SPARCS dataset.

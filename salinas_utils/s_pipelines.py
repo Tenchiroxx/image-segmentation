@@ -87,7 +87,7 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
         monitor='val_loss',
         mode='min',
         save_best_only=True)
-    ES = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=20)
+    ES = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=30)
 
     # Deep Learning Model
     model = Unet4(shape=(32, 32, test_data.shape[3]), nb_filters=32, kernel_size=3, initialization="glorot_uniform", output_channels=17, drop=0.2, regularization=l2(0.001205))
@@ -98,7 +98,7 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
 
     history = model.fit(generator, batch_size=10, 
                 steps_per_epoch=6, 
-                epochs=200,
+                epochs=500,
                 validation_data = (val_data, val_labels, val_weights),
                 callbacks=[model_checkpoint_callback, ES])
     
@@ -110,6 +110,15 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     print(np.argmax(pred[:, :, :, 1:], axis=3).shape)
     accuracy = tf.keras.metrics.Accuracy()
     accuracy.update_state(test_labels, np.argmax(pred[:, :, :, 1:], axis=3)+1, sample_weight=test_weights)
+
+    print(pred.shape)
+    print(test_labels.shape)
+
+    recall = tf.keras.metrics.Recall()
+    recall.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), pred.flatten())
+
+    precision = tf.keras.metrics.Precision()
+    precision.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), pred.flatten())
 
     images = np.argmax(pred[:, :, :, 1:], axis=3)+1
     images[test_labels==0] = 0
@@ -136,7 +145,13 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     conf = confusion_matrix(pred, test_labels)
     print(conf)
     np.save("logs/metrics/salinas/u_net/confusion_matrix", conf)
+    recall = recall.result().numpy()
+    precision = precision.result().numpy()
     print("Test accuracy = ", accuracy.result().numpy())
+    print("Test precision =", precision)
+    print("Test recall =", recall)
+    print("Test F1-score =", 2*precision*recall/(precision+recall))
+    return(accuracy.result().numpy(), precision, recall, 2*precision*recall/(precision+recall))
 
 def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights):
     # Creating an image generator
@@ -217,7 +232,7 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
 
     history = model.fit(generator, batch_size=5, 
                 steps_per_epoch=50, 
-                epochs=50,
+                epochs=500,
                 validation_data = (val_data, val_labels, val_weights),
                 callbacks=[model_checkpoint_callback, ES])
     
@@ -228,6 +243,12 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     accuracy = tf.keras.metrics.Accuracy()
 
     accuracy.update_state(test_labels, np.argmax(pred[:, :, :, 1:], axis=3)+1, sample_weight=test_weights)
+
+    recall = tf.keras.metrics.Recall()
+    recall.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), pred.flatten())
+
+    precision = tf.keras.metrics.Precision()
+    precision.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), pred.flatten())
 
     images = np.argmax(pred[:, :, :, 1:], axis=3)+1
     images[test_labels==0] = 0
@@ -254,6 +275,16 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     print(conf)
     np.save("logs/metrics/salinas/u_net_sep/confusion_matrix", conf)
     print("Test accuracy = ", accuracy.result().numpy())
+    recall = recall.result().numpy()
+    precision = precision.result().numpy()
+    #print("Test accuracy = ", accuracy.result().numpy())
+    #print("Test precision =", precision)
+    #print("Test recall =", recall)
+    #print("Test F1-score =", 2*precision*recall/(precision+recall))
+    print(type(accuracy.result().numpy()), type(precision), type(recall), type(2*precision*recall/(precision+recall)))
+    print(accuracy.result().numpy(), precision, recall, 2*precision*recall/(precision+recall))
+    
+    return(accuracy.result().numpy(), precision, recall, 2*precision*recall/(precision+recall))
 
 def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights): 
 
@@ -350,7 +381,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
                 steps_per_epoch=steps_per_epoch, 
                 epochs=500,
                 validation_data = val_generator,
-                callbacks=[model_checkpoint_callback])
+                callbacks=[model_checkpoint_callback, tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=30)])
                 
     np.save("logs/metrics/salinas/conv_net/train_accuracy", history.history['accuracy'])
     np.save("logs/metrics/salinas/conv_net/val_accuracy", history.history['val_accuracy'])
@@ -361,7 +392,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     y_pred = np.argmax(y_pred[:,1:], axis=1)+1
     
     accuracy = Accuracy()
-    accuracy.update_state(test_labels, y_pred, sample_weight=test_weights)
+    accuracy.update_state(test_labels, y_pred)
     pred_accuracy = accuracy.result()
     print(pred_accuracy)
 
@@ -375,37 +406,46 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     print(y_pred.shape)
     y_pred[test_labels.reshape(test_shape)==0] = 0
     print("Saving raw predictions")
-    import matplotlib.pyplot as plt
-    c = 0
-    cmap = plt.get_cmap('viridis', 16)
-    for image in y_pred:
-        plt.imshow(image, vmin=0, vmax=16, cmap=cmap)
-        plt.colorbar()
-        plt.savefig(f"images/salinas/cnn_1D/pred{c}_raw")
-        plt.clf()
+    # import matplotlib.pyplot as plt
+    # c = 0
+    # cmap = plt.get_cmap('viridis', 16)
+    # for image in y_pred:
+    #     plt.imshow(image, vmin=0, vmax=16, cmap=cmap)
+    #     plt.colorbar()
+    #     plt.savefig(f"images/salinas/cnn_1D/pred{c}_raw")
+    #     plt.clf()
 
-        plt.imshow(test_labels.reshape(test_shape)[c], vmin=0, vmax=16, cmap=cmap)
-        plt.colorbar()
-        plt.savefig(f"images/salinas/cnn_1D/GT{c}")
-        plt.clf()
+    #     plt.imshow(test_labels.reshape(test_shape)[c], vmin=0, vmax=16, cmap=cmap)
+    #     plt.colorbar()
+    #     plt.savefig(f"images/salinas/cnn_1D/GT{c}")
+    #     plt.clf()
 
-        c+=1
+    #     c+=1
 
-    for i in range(len(y_pred)):
-        y_pred[i] = medfilt(y_pred[i], kernel_size = 3)
+    # for i in range(len(y_pred)):
+    #     y_pred[i] = medfilt(y_pred[i], kernel_size = 3)
 
-    print("Saving median filtered predictions")
-    c = 0
-    for image in y_pred:
-        plt.imshow(image, vmin=0, vmax=16, cmap=cmap)
-        plt.colorbar()
-        plt.savefig(f"images/salinas/cnn_1D/pred{c}_filtered")
-        plt.clf()
+    # print("Saving median filtered predictions")
+    # c = 0
+    # for image in y_pred:
+    #     plt.imshow(image, vmin=0, vmax=16, cmap=cmap)
+    #     plt.colorbar()
+    #     plt.savefig(f"images/salinas/cnn_1D/pred{c}_filtered")
+    #     plt.clf()
 
-        c+=1
+    #     c+=1
     
     y_pred = y_pred.reshape(test_shape[0]*test_shape[1]*test_shape[2])
     accuracy = Accuracy()
-    accuracy.update_state(test_labels, y_pred, test_weights)
-    pred_accuracy = accuracy.result()
-    print(pred_accuracy)
+    accuracy.update_state(test_labels, y_pred, sample_weight = test_weights)
+
+
+    print("HEYYYYYY", test_labels.shape, y_pred.flatten().shape)
+    print(np.unique(test_labels), np.unique(y_pred))
+    recall = tf.keras.metrics.Recall()
+    recall.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), tf.one_hot(y_pred, depth=17).numpy().flatten())
+
+    precision = tf.keras.metrics.Precision()
+    precision.update_state(tf.one_hot(test_labels, depth=17).numpy().flatten(), tf.one_hot(y_pred, depth=17).numpy().flatten())
+    print(accuracy.result().numpy(), precision.result().numpy(), recall.result().numpy(), 2*precision.result().numpy()*recall.result().numpy()/(precision.result().numpy()+recall.result().numpy()))
+    return(accuracy.result().numpy(), precision.result().numpy(), recall.result().numpy(), 2*precision.result().numpy()*recall.result().numpy()/(precision.result().numpy()+recall.result().numpy()))

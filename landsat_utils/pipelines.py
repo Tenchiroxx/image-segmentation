@@ -17,22 +17,17 @@ import tensorflow as tf
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
     try:
-        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=8096)])
+        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096)])
     except RuntimeError as e:
         print(e)
 
 def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights):
-    print(np.unique(test_labels, return_counts=True))
-    print(np.unique(val_labels, return_counts=True))
-    limit_gpu()
-    
+
     l, x, y = train_labels.shape
     new_shape = (l, x, y, 1)
     train_labels = np.reshape(train_labels, new_shape)
-
-    
-
     train_weights = np.ones(shape=train_labels.shape)
+    
     for i in range(len(classes)):
         train_weights[train_labels == classes[i]] = weights[i]
 
@@ -55,9 +50,11 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
 
     image_generator = image_datagen.flow(
         train_data,
+        batch_size=100,
         seed=seed)
     mask_generator = mask_datagen.flow(
         train_labels,
+        batch_size=100,
         sample_weight = train_weights,
         seed=seed)
 
@@ -109,9 +106,9 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     print(model.summary())
     model.compile(loss = "categorical_crossentropy", optimizer=Adam(learning_rate=0.00019), metrics=["accuracy"])
 
-    history = model.fit(generator, batch_size=20, 
-                steps_per_epoch=50, 
-                epochs=100,
+    history = model.fit(generator, batch_size=100, 
+                steps_per_epoch=10, 
+                epochs=500,
                 validation_data = (val_data, val_labels, val_weights),
                 callbacks=[model_checkpoint_callback, ES])
     
@@ -133,7 +130,7 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     import matplotlib.pyplot as plt
     c = 0
     cmap = plt.get_cmap('viridis', 6)
-    for image in pred[:30]:
+    for image in pred[:50]:
         plt.imshow(np.argmax(image, axis=2)+1e-5, cmap=cmap, vmin=0, vmax=6)
         plt.colorbar()
         plt.savefig(f"images/SPARCS/u_net/pred{c}")
@@ -143,6 +140,9 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
         plt.colorbar()
         plt.savefig(f"images/SPARCS/u_net/GT{c}")
         plt.clf()
+
+        plt.imshow(test_data[c][:,:,5:9]/np.amax(test_data[c][:,:,5:9]))
+        plt.savefig(f"images/SPARCS/u_net/original{c}")
 
         c+=1
  
@@ -200,12 +200,12 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
 
     image_generator = image_datagen.flow(
         train_data,
-        batch_size=10,
+        batch_size=20,
         seed=seed)
     mask_generator = mask_datagen.flow(
         train_labels,
-        sample_weight = train_weights,
-        batch_size=10,
+        #sample_weight = train_weights,
+        batch_size=20,
         seed=seed)
     print(train_data.shape, train_labels.shape, val_data.shape, val_labels.shape)
     del train_data, train_labels, train_weights
@@ -247,20 +247,20 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
         save_best_only=True)
 
     # Early Stopping Callback
-    ES = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=40)
+    ES = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=30)
 
     # Deep Learning Model
     
-    model = UnetSeparable(shape=(256, 256, 10), depth=10, nb_filters=4, kernel_size=3, initialization="he_normal", output_channels=6, drop=0.5)
+    model = UnetSeparable(shape=(256, 256, 10), depth=10, nb_filters=4, kernel_size=5, initialization="he_normal", output_channels=6, drop=0.3, regularization=l2(0.00013443))
     print(model.summary())
 
-    model.compile(loss = "categorical_crossentropy", optimizer=Adam(), metrics=["accuracy"])
+    model.compile(loss = "categorical_crossentropy", optimizer=Adam(0.00046131), metrics=["accuracy"])
 
-    history = model.fit(generator, batch_size=10, 
-                steps_per_epoch=100, 
-                epochs=500,
-                validation_data = (val_data, val_labels, val_weights),
-                callbacks=[model_checkpoint_callback, ES])
+    history = model.fit(generator, batch_size=20, 
+                steps_per_epoch=50, 
+                epochs=150,
+                validation_data = (val_data, val_labels),
+                callbacks=[model_checkpoint_callback])
     
     np.save("logs/metrics/SPARCS/u_net_sep/train_accuracy", history.history['accuracy'])
     np.save("logs/metrics/SPARCS/u_net_sep/val_accuracy", history.history['val_accuracy'])
@@ -288,6 +288,9 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
         plt.colorbar()
         plt.savefig(f"images/SPARCS/u_net_sep/GT{c}")
         plt.clf()
+
+        plt.imshow(test_data[c][:,:,5:9]/np.amax(test_data[c][:,:,5:9]))
+        plt.savefig(f"images/SPARCS/u_net_sep/original{c}")
 
         c+=1
  
@@ -404,7 +407,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
 
     history = model.fit(train_generator,
                 steps_per_epoch=steps_per_epoch, 
-                epochs=50,
+                epochs=500,
                 validation_data = val_generator,
                 validation_steps = 5,
                 callbacks=[EarlyStopping(monitor='val_accuracy', patience=40)]
@@ -424,7 +427,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     print(classes, counts)
     
     accuracy = Accuracy()
-    accuracy.update_state(test_labels, y_pred)
+    accuracy.update_state(test_labels, y_pred, sample_weight=test_weights)
     pred_accuracy = accuracy.result()
     print(pred_accuracy)
 
@@ -452,7 +455,6 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
         plt.savefig(f"images/SPARCS/cnn_1D/GT{c}")
         plt.clf()
 
-
         c+=1
 
     for i in range(len(y_pred)):
@@ -470,7 +472,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     
     y_pred = y_pred.reshape(test_shape[0]*test_shape[1]*test_shape[2])
     accuracy = Accuracy()
-    accuracy.update_state(test_labels, y_pred)
+    accuracy.update_state(test_labels, y_pred, sample_weight=test_weights)
 
 
     test_labels = tf.one_hot(test_labels, depth=6).numpy().flatten()

@@ -22,7 +22,7 @@ import tensorflow as tf
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
     try:
-        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=6000)])
+        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=20000)])
     except RuntimeError as e:
         print(e)
 
@@ -59,11 +59,11 @@ if __name__ == "__main__":
     mask_datagen.fit(train_labels, augment=True, seed=seed)
 
     image_generator = image_datagen.flow(
-        train_data, batch_size=10,
+        train_data, batch_size=50,
         seed=seed)
     mask_generator = mask_datagen.flow(
         train_labels,
-        sample_weight = train_weights, batch_size=10,
+        sample_weight = train_weights, batch_size=50,
         seed=seed)
 
 
@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
 
 
-    ES = EarlyStopping(monitor='val_accuracy', patience=40)
+    ES = EarlyStopping(monitor='val_accuracy', patience=20)
 
 
     ############################################################################
@@ -202,7 +202,7 @@ if __name__ == "__main__":
         # Performs the hyperparameter tuning
         logger.info("Start hyperparameter tuning")
         search_start = time.time()
-        tuner.search(generator, epochs= 500, batch_size=10, steps_per_epoch=100, validation_data = (val_data, val_labels, val_weights), callbacks=[EarlyStopping(monitor='val_accuracy', patience=20)])
+        tuner.search(generator, epochs= 500, batch_size=50, steps_per_epoch=20, validation_data = (val_data, val_labels, val_weights), callbacks=[EarlyStopping(monitor='val_accuracy', patience=20)])
         search_end = time.time()
         elapsed_time = search_end - search_start
 
@@ -225,7 +225,7 @@ if __name__ == "__main__":
  
 
     #tuner = RandomSearch(hypermodel, objective='accuracy', max_trials=500, seed=2, directory = "SPARCS_unet_random_search", max_model_size=100000000, overwrite=True)
-    tuner = BayesianOptimization(hypermodel, objective='val_accuracy', max_trials=500, num_initial_points=2, seed=2, directory = "SPARCS_unet_random_search", max_model_size=100000000, overwrite=True)
+    tuner = BayesianOptimization(hypermodel, objective='val_accuracy', max_trials=500, num_initial_points=5, seed=2, directory = "SPARCS_unet_random_search", max_model_size=100000000, overwrite=True)
 
     results = []
 

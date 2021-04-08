@@ -133,7 +133,7 @@ def ConvBlockSeparable(tensor, nb_filters, depth, kernel_size=3, padding='same',
     x = Activation(activation)(x)
     return x
 
-def UnetSeparable(shape, depth, nb_filters=2, exp=1, kernel_size=3, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, drop=0.0, regularization=None):
+def UnetSeparable(shape, depth, nb_filters=4, exp=1, kernel_size=5, initialization="glorot_uniform", activation="relu", sigma_noise=0, output_channels=1, drop=0.3, regularization=0.00013443):
     
     input_layer = Input(shape=shape)
 
