@@ -1,3 +1,8 @@
+"""
+This is a code to plot detailed confusion matrices. 
+"""
+
+
 from pandas import DataFrame
 import numpy as np
 import matplotlib.pyplot as plt
