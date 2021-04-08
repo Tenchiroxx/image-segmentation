@@ -26,6 +26,9 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
+
+# -- Main function -- 
+
 if __name__ == "__main__":
 
 
