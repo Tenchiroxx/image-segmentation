@@ -6,23 +6,43 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras.metrics import Accuracy
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.regularizers import l2
 from unet import Unet, Unet4, UnetSeparable, cnn_1D
 import tensorflow as tf
 from landsat_utils.utils import limit_gpu
-from tensorflow.keras.callbacks import EarlyStopping
 from scipy.signal import medfilt
-from tensorflow.keras.regularizers import l2
-
 import tensorflow as tf
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096)])
-    except RuntimeError as e:
-        print(e)
+
 
 def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights):
 
+    """This function is the main pipeline for the U-Net.
+    
+    Parameters :
+    ------------
+    xxx_data : np.array
+    Data of the train, validation and test datasets
+
+    xxx_labels : np.array
+    Labels of the train, validation and test datasets
+
+    classes : np.array
+    Classes of the dataset
+
+    weights : np.array
+    Weights applied for each class during training
+
+    Returns :
+    -----------
+    Accuracy : float
+    Precision : float 
+    Recall : float
+    F1-Score : float
+    Metrics evaluated on the test set
+    """
+
+    # Determining the weights of each pixel of the images
     l, x, y = train_labels.shape
     new_shape = (l, x, y, 1)
     train_labels = np.reshape(train_labels, new_shape)
@@ -99,8 +119,6 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     ES = EarlyStopping(monitor='val_accuracy', patience=20)
 
     # Deep Learning Model
-    
-    
 
     model = Unet4((img_rows, img_cols, img_channels), nb_filters=nb_filters_0, output_channels=nb_classes, initialization="he_normal", kernel_size=5, drop=0.0, regularization=l2(0.000135))
     print(model.summary())
@@ -112,10 +130,10 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
                 validation_data = (val_data, val_labels, val_weights),
                 callbacks=[model_checkpoint_callback, ES])
     
-    np.save("logs/metrics/SPARCS/u_net/train_accuracy", history.history['accuracy'])
-    np.save("logs/metrics/SPARCS/u_net/val_accuracy", history.history['val_accuracy'])
-
+    # Making a prediction on the test data
     pred = model.predict(test_data)
+
+    # Computing metrics
     accuracy = tf.keras.metrics.Accuracy()
     accuracy.update_state(np.argmax(pred, axis=3), test_labels)
 
@@ -125,9 +143,10 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
     precision = tf.keras.metrics.Precision()
     precision.update_state(tf.one_hot(test_labels, depth=6).numpy().flatten(), pred.flatten())
 
+    # Computing the confusion matrix
     print(confusion_matrix(np.argmax(pred, axis=3).flatten(), test_labels.flatten(), sample_weight=test_weights.flatten()))
 
-    import matplotlib.pyplot as plt
+    # Plotting images of the test dataset
     c = 0
     cmap = plt.get_cmap('viridis', 6)
     for image in pred[:50]:
@@ -145,16 +164,16 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
         plt.savefig(f"images/SPARCS/u_net/original{c}")
 
         c+=1
- 
+    
     pred = np.argmax(pred, axis=3)
     pred = pred.flatten()
     test_labels = test_labels.flatten()
-    print(pred.shape, test_labels.shape)
-    print(np.unique(pred, return_counts=True))
-    print(np.unique(test_labels, return_counts=True))
+
+    # Computing the confusion matrix
     conf = confusion_matrix(test_labels, pred, labels=[0, 1, 2, 3, 4, 5])
-    print(conf)
     np.save("logs/metrics/SPARCS/u_net/confusion_matrix", conf)
+
+    # Computing metrics
     test_accuracy = accuracy.result().numpy()
     test_recall = recall.result().numpy()
     test_precision = precision.result().numpy()
@@ -168,14 +187,36 @@ def u_net_pipeline(train_data, train_labels, val_data, val_labels, test_data, te
 
 def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights):
 
-    limit_gpu()
+     """This function is the main pipeline for the separable U-Net.
+    
+    Parameters :
+    ------------
+    xxx_data : np.array
+    Data of the train, validation and test datasets
+
+    xxx_labels : np.array
+    Labels of the train, validation and test datasets
+
+    classes : np.array
+    Classes of the dataset
+
+    weights : np.array
+    Weights applied for each class during training
+
+    Returns :
+    -----------
+    Accuracy : float
+    Precision : float 
+    Recall : float
+    F1-Score : float
+    Metrics evaluated on the test set
+    """
     
     l, x, y = train_labels.shape
     new_shape = (l, x, y, 1)
     train_labels = np.reshape(train_labels, new_shape)
 
-    
-
+    # Calculating weights of each pixel
     train_weights = np.ones(shape=train_labels.shape)
     for i in range(len(classes)):
         train_weights[train_labels == classes[i]] = weights[i]
@@ -204,11 +245,11 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
         seed=seed)
     mask_generator = mask_datagen.flow(
         train_labels,
-        #sample_weight = train_weights,
         batch_size=20,
         seed=seed)
-    print(train_data.shape, train_labels.shape, val_data.shape, val_labels.shape)
+    
     del train_data, train_labels, train_weights
+
     def image_mask_generator(image_generator, mask_generator):
         train_generator = zip(image_generator, mask_generator)
         for (img, mask) in train_generator:
@@ -234,9 +275,6 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     #Output
     nb_classes = 6
 
-    # Architecture Parameters
-    nb_filters_0 = 32
-
     # Saving the model at each step
     checkpoint_filepath = "tmp/checkpoint_SPARCS_unet"
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -256,6 +294,7 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
 
     model.compile(loss = "categorical_crossentropy", optimizer=Adam(0.00046131), metrics=["accuracy"])
 
+    # Training the model
     history = model.fit(generator, batch_size=20, 
                 steps_per_epoch=50, 
                 epochs=150,
@@ -265,7 +304,10 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     np.save("logs/metrics/SPARCS/u_net_sep/train_accuracy", history.history['accuracy'])
     np.save("logs/metrics/SPARCS/u_net_sep/val_accuracy", history.history['val_accuracy'])
 
+    # Making a prediction on the test data
     pred = model.predict(test_data)
+
+    # Computing metrics on the test data
     accuracy = tf.keras.metrics.Accuracy()
     accuracy.update_state(np.argmax(pred, axis=3), test_labels)
 
@@ -275,6 +317,7 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     precision = tf.keras.metrics.Precision()
     precision.update_state(tf.one_hot(test_labels, depth=6).numpy().flatten(), pred.flatten())
 
+    # Plotting result images on the test dataset
     import matplotlib.pyplot as plt
     c = 0
     cmap = plt.get_cmap('viridis', 6)
@@ -297,7 +340,8 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
     pred = np.argmax(pred, axis=3)
     pred = pred.flatten()
     test_labels = test_labels.flatten()
-    print(pred.shape, test_labels.shape)
+
+    # Computing the confusion matrix
     conf = confusion_matrix(test_labels, pred)
     print(conf)
     np.save("logs/metrics/SPARCS/u_net_sep/confusion_matrix", conf)
@@ -316,19 +360,45 @@ def u_net_sep_pipeline(train_data, train_labels, val_data, val_labels, test_data
 
 def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, test_labels, classes, weights):
 
+    """This function is the main pipeline for the 1D CNN.
+    
+    Parameters :
+    ------------
+    xxx_data : np.array
+    Data of the train, validation and test datasets
+
+    xxx_labels : np.array
+    Labels of the train, validation and test datasets
+
+    classes : np.array
+    Classes of the dataset
+
+    weights : np.array
+    Weights applied for each class during training
+
+    Returns :
+    -----------
+    Accuracy : float
+    Precision : float 
+    Recall : float
+    F1-Score : float
+    Metrics evaluated on the test set
+    """
+
+    # Reshaping the data
+
     train_data = train_data.reshape(train_data.shape[0]*train_data.shape[1]*train_data.shape[2], train_data.shape[3])
     train_labels = train_labels.reshape(train_labels.shape[0]*train_labels.shape[1]*train_labels.shape[2])
 
     val_data = val_data.reshape(val_data.shape[0]*val_data.shape[1]*val_data.shape[2], val_data.shape[3])
     val_labels = val_labels.reshape(val_labels.shape[0]*val_labels.shape[1]*val_labels.shape[2])
-
     
     test_shape = test_labels.shape
     test_data = test_data.reshape(test_data.shape[0]*test_data.shape[1]*test_data.shape[2], test_data.shape[3])
     test_labels = test_labels.reshape(test_labels.shape[0]*test_labels.shape[1]*test_labels.shape[2])
 
-    print(len(test_labels))
-    print("WEIGHTS :", weights)
+
+    # Computing the weights of each pixel
     train_weights = np.ones((train_labels.shape[0])) 
     for i in range(len(classes)):
         train_weights[train_labels == classes[i]] = weights[i]
@@ -342,7 +412,6 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
         test_weights[test_labels == classes[i]] = weights[i]
 
      # One-Hot Encoding the labels
-
     train_labels = tf.one_hot(train_labels, depth=6, dtype=tf.int8).numpy()
     val_labels = tf.one_hot(val_labels, depth=6, dtype=tf.int8).numpy()
 
@@ -390,9 +459,6 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     train_generator = DataGenerator(train_data, train_labels, train_weights, batch_size, shuffle=True)
     val_generator = DataGenerator(val_data, val_labels, val_weights, batch_size, shuffle=True)
 
-
-    #del train_data, train_labels, train_weights, val_data, val_labels, val_weights
-
     checkpoint_filepath = "tmp/checkpoint_SPARCS_cnn_1D"
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_filepath,
@@ -404,7 +470,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     model = cnn_1D(shape=(10, 1), kernel_size=3, nb_filters_0=128, nb_dense_neurons=180, kernel_reg=0.0083, dense_reg=0.054, output_channels=6, dropout=0.0, learning_rate=0.000322)
     print(model.summary())
 
-
+    # Training the model
     history = model.fit(train_generator,
                 steps_per_epoch=steps_per_epoch, 
                 epochs=500,
@@ -413,24 +479,18 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
                 callbacks=[EarlyStopping(monitor='val_accuracy', patience=40)]
                 )
 
-                
-    np.save("logs/metrics/SPARCS/cnn_1D/train_accuracy", history.history['accuracy'])
-    np.save("logs/metrics/SPARCS/cnn_1D/val_accuracy", history.history['val_accuracy'])
-    print(np.unique(test_labels, return_counts=True))
 
+    # Making a prediction
     y_pred = model.predict(test_data, batch_size=30000)
-    print(y_pred.shape)
     y_pred = np.argmax(y_pred, axis=1)
-    classes, counts = np.unique(y_pred, return_counts=True)
-    print(classes, counts)
-    classes, counts = np.unique(test_labels, return_counts=True)
-    print(classes, counts)
-    
+
+    # Computing accuracy
     accuracy = Accuracy()
     accuracy.update_state(test_labels, y_pred, sample_weight=test_weights)
     pred_accuracy = accuracy.result()
     print(pred_accuracy)
 
+    # Computing the confusion matrix
     print("Computing confusion matrix")
     conf = confusion_matrix(test_labels, y_pred)
     print(conf)
@@ -440,8 +500,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     y_pred = y_pred.reshape(test_shape)
     print(y_pred.shape)
 
-    print("Saving raw predictions")
-    import matplotlib.pyplot as plt
+    # Plotting result images on the test dataset
     c = 0
     cmap = plt.get_cmap('viridis', 6)
     for image in y_pred[:30]:
@@ -457,10 +516,13 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
 
         c+=1
 
+    # Applying a median filter on the results
     for i in range(len(y_pred)):
         y_pred[i] = medfilt(y_pred[i], kernel_size = 3)
 
-    print("Saving median filtered predictions")
+
+
+    # Plotting the median filtered result images
     c = 0
     for image in y_pred[:30]:
         plt.imshow(image+1e-5, vmin=0, vmax=6, cmap=cmap)
@@ -470,6 +532,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
 
         c+=1
     
+    # Computing metrics on the test dataset
     y_pred = y_pred.reshape(test_shape[0]*test_shape[1]*test_shape[2])
     accuracy = Accuracy()
     accuracy.update_state(test_labels, y_pred, sample_weight=test_weights)
@@ -484,7 +547,7 @@ def cnn_1d_pipeline(train_data, train_labels, val_data, val_labels, test_data, t
     precision.update_state(test_labels, y_pred)
 
 
-
+    # Printing metrics
     test_accuracy = accuracy.result().numpy()
     test_recall = recall.result().numpy()
     test_precision = precision.result().numpy()
