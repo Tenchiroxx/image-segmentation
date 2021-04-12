@@ -15,6 +15,8 @@ from tensorflow.keras.layers import Input, concatenate, Conv1D, Conv2D, Conv3D, 
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 
+"""This tuner is used to determine the best hyperparameters for the 1D CNN on the SPARCS/Landsat-8 dataset"""
+
 # -- Throtling GPU use -- 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:

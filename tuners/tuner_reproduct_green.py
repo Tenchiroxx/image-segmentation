@@ -18,7 +18,7 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-
+"""This tuner is used to find the best hyperparameters for the U-Net model when reproducing Jeppesen's experiment with only the green band."""
 # -- Throtling GPU use -- 
 import tensorflow as tf
 gpus = tf.config.experimental.list_physical_devices('GPU')

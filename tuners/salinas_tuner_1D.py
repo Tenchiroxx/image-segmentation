@@ -14,6 +14,8 @@ from tensorflow.keras.layers import Input, concatenate, Conv1D, Conv2D, Conv3D, 
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 
+"""This tuner is used to determine the best hyperparameters for the 1D CNN on the salinas dataset"""
+
 # -- Throtling GPU use -- 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -120,19 +122,16 @@ if __name__ == "__main__":
             x = Conv1D(filters=nb_filters_0, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=l2(reg), padding='valid')(input_layer)
             x = BatchNormalization()(x)
             x = Activation("relu")(x)
-            #x = MaxPooling1D(pool_size=2)(x)
             x = Dropout(dropout)(x)
 
             x = Conv1D(filters=nb_filters_0*2, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=l2(reg), padding='valid')(x)
             x = BatchNormalization()(x)
             x = Activation("relu")(x)
-            #x = MaxPooling1D(pool_size=2)(x)
             x = Dropout(dropout)(x)
 
             x = Conv1D(filters=nb_filters_0*4, kernel_size=kernel_size, kernel_initializer=kernel_initializer, kernel_regularizer=l2(reg), padding='valid')(x)
             x = BatchNormalization()(x)
             x = Activation("relu")(x)
-            #x = MaxPooling1D(pool_size=2)(x)
             x = Dropout(dropout)(x)
 
             x = Flatten()(x)
@@ -176,9 +175,6 @@ if __name__ == "__main__":
     INPUT_SHAPE = (train_data.shape[1], 1)
 
     hypermodel = CNNHyperModel(input_shape=INPUT_SHAPE, num_classes=NUM_CLASSES)
-
-
-
     
     tuner = BayesianOptimization(hypermodel, objective='val_accuracy', max_trials=500, num_initial_points=2, seed=2, directory = "Salinas_CNN_1D_random_search",  overwrite=True)
 

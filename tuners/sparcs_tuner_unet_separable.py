@@ -16,6 +16,7 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
+"""This tuner is used to determine the best hyperparameters for the separable U-Net on the SPARCS/Landsat-8 dataset"""
 
 # -- Throtling GPU use -- 
 import tensorflow as tf

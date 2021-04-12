@@ -15,6 +15,7 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
+"""This tuner is used to determine the best hyperparameters for the U-Net on the salinas dataset"""
 
 # -- Throtling GPU use -- 
 import tensorflow as tf
